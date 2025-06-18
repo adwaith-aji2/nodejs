@@ -15,8 +15,8 @@ jobs:
 
       - name: Deploy to EC2
         env:
-          HOST: ${{ secrets.EC2_HOST }}
-          KEY: ${{ secrets.EC2_SSH_KEY }}
+          HOST: ${{ secrets.SSH_HOST }}
+          KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           echo "$KEY" > key.pem
           chmod 600 key.pem
