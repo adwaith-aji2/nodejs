@@ -1,4 +1,4 @@
-name: Deploy Node.js App to EC2
+name: Deploy Node.js App to EC2 and Publish to Nexus
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
           # Sync project to EC2
           rsync -avz -e "ssh -i key.pem -o StrictHostKeyChecking=no" ./ ec2-user@$HOST:/home/ec2-user/nodeapp/
 
-          # SSH and start/restart app
+          # SSH and restart app
           ssh -i key.pem ec2-user@$HOST << 'EOF'
             cd ~/nodeapp
             npm install
@@ -32,3 +32,13 @@ jobs:
             pm2 start app.js --name ecommerce
             pm2 save
           EOF
+
+      - name: Zip code for Nexus upload
+        run: |
+          zip -r nodeapp.zip . -x "*.git*"
+
+      - name: Upload to Nexus
+        run: |
+          curl -u ${{ secrets.NEXUS_USER }}:${{ secrets.NEXUS_PASS }} \
+            --upload-file nodeapp.zip \
+            ${{ secrets.NEXUS_URL }}/repository/node-artifacts/nodeapp.zip
