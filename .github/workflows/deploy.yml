@@ -1,4 +1,4 @@
-name: Deploy Node.js App to EC2 and Publish to Nexus
+name: Deploy Node.js App to EC2
 
 on:
   push:
@@ -10,8 +10,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Configure npm to use Nexus for install
+        run: |
+          echo "//$(echo ${{ secrets.NEXUS_REGISTRY }} | sed 's|https\?://||'):_auth=$(echo -n '${{ secrets.NEXUS_USERNAME }}:${{ secrets.NEXUS_PASSWORD }}' | base64)" > .npmrc
+          echo "registry=${{ secrets.NEXUS_REGISTRY }}" >> .npmrc
+
+      - name: Install Dependencies from Nexus
+        run: npm install
+
+      - name: Configure npm to publish to Nexus
+        run: |
+          echo "//$(echo ${{ secrets.NEXUS_PUBLISH_REGISTRY }} | sed 's|https\?://||'):_auth=$(echo -n '${{ secrets.NEXUS_USERNAME }}:${{ secrets.NEXUS_PASSWORD }}' | base64)" > .npmrc
+          echo "registry=${{ secrets.NEXUS_PUBLISH_REGISTRY }}" >> .npmrc
+
+      - name: Publish to Nexus Repository
+        run: npm publish --registry=${{ secrets.NEXUS_PUBLISH_REGISTRY }}
 
       - name: Deploy to EC2
         env:
@@ -21,24 +44,16 @@ jobs:
           echo "$KEY" > key.pem
           chmod 600 key.pem
 
-          # Sync project to EC2
-          rsync -avz -e "ssh -i key.pem -o StrictHostKeyChecking=no" ./ ec2-user@$HOST:/home/ec2-user/nodeapp/
+          # Sync code to EC2
+          rsync -avz -e "ssh -i key.pem -o StrictHostKeyChecking=no" ./ ec2-user@$HOST:/home/ec2-user/simple-ecommerce/
 
-          # SSH and restart app
+          # Remote install and run
           ssh -i key.pem ec2-user@$HOST << 'EOF'
-            cd ~/nodeapp
+            cd ~/simple-ecommerce
+            echo "//$(echo ${{ secrets.NEXUS_REGISTRY }} | sed 's|https\?://||'):_auth=$(echo -n '${{ secrets.NEXUS_USERNAME }}:${{ secrets.NEXUS_PASSWORD }}' | base64)" > .npmrc
+            echo "registry=${{ secrets.NEXUS_REGISTRY }}" >> .npmrc
             npm install
-            pm2 stop ecommerce || true
+            pm2 stop all || true
             pm2 start app.js --name ecommerce
             pm2 save
           EOF
-
-      - name: Zip code for Nexus upload
-        run: |
-          zip -r nodeapp.zip . -x "*.git*"
-
-      - name: Upload to Nexus
-        run: |
-          curl -u ${{ secrets.NEXUS_USER }}:${{ secrets.NEXUS_PASS }} \
-            --upload-file nodeapp.zip \
-            ${{ secrets.NEXUS_URL }}/repository/node-artifacts/nodeapp.zip
